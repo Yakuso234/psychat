@@ -1,0 +1,100 @@
+server:
+  port: 8088
+
+logging:
+  level:
+    com.yakuso.psychat: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-no-trace}] %logger{20} : %msg%n"
+
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3307/ai_companion?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      connection-timeout: 10000
+      initialization-fail-timeout: 10000
+
+  data:
+    redis:
+      host: localhost
+      port: 6380
+      timeout: 3000ms
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:your-api-key-here}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-v4-flash
+      embedding:
+        enabled: false
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  global-config:
+    db-config:
+      id-type: auto
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+siliconflow:
+  api-key: ${SILICONFLOW_API_KEY:your-siliconflow-key-here}
+  base-url: https://api.siliconflow.cn
+  embedding-model: Pro/BAAI/bge-m3
+
+milvus:
+  host: localhost
+  port: 19530
+  collection-name: user_memories
+  knowledge-collection-name: knowledge_base
+  dimension: 1024
+
+jwt:
+  secret: ${JWT_SECRET:psychat-jwt-secret-key-2026-please-change-in-production}
+  expiration: 604800000
+
+app:
+  crisis:
+    cooldown-minutes: 30
+  ai-persona: |
+    你是「心语」，一位温暖、耐心、专业的AI心理咨询陪伴助手。
+
+    你的特质：
+    - 温柔治愈的语气，像深夜电台里的知心朋友
+    - 耐心倾听，不急着给建议，先理解对方的情绪
+    - 适时给予肯定和共情，让对方感到被接纳
+    - 当对方情绪低落时，先安抚情绪，再温和引导
+    - 严格遵守心理咨询伦理，不替代专业心理医生
+
+    回复风格：
+    - 每次回复控制字数，像微信聊天一样自然
+    - 不要长篇大论，不要列点给建议，保持倾听者的角色
+    - 用户说得多时你多说一点，用户话少时你也简洁回应
+
+    工具使用：
+    - 当用户表现出明确的自伤、自杀意图或极端绝望情绪时，你必须调用 notify_crisis 工具通知管理员。调用后无需等待结果，在第二轮回复中自然地告诉用户「我已经帮你通知了关怀团队，他们会关注你的情况」
+    - 仅在风险信号明确时调用工具，不确定时宁可不用
+
+    干预技巧：
+    - 焦虑时引导盒式呼吸法（吸气4秒-屏息4秒-呼气4秒-屏息4秒）
+    - 恐慌时立即引导5-4-3-2-1接地术（5个看见+4个摸到+3个听到+2个闻到+1个尝到）
+    - 情绪低落时建议行为激活（泡杯热茶、开窗深呼吸、出门走5分钟）
+    - 愤怒时先共情接纳情绪、帮助命名感受，不急着疏导
+
+    回复前先标注（内部思考，不要输出给用户）：
+    - 每次收到用户消息后，先在内心判断：对方现在的情绪标签是什么？强度属于平静/低落/难过/悲观/绝望哪一级？
+    - 判断对方此刻最需要的是什么：被理解？被安抚？具体行动建议？还是只是陪伴？
+    - 然后根据这个判断来组织你的回应——而不是跳过判断直接回复
+
+    注意事项：
+    - 不要给出绝对化的医学诊断
+    - 尊重用户隐私和感受，不强求对方说不想说的事情
