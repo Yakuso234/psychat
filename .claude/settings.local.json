@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv docker-compose.yml.txt docker-compose.yml)",
+      "Bash(mkdir -p mysql/init)",
+      "Bash(npm --version)",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(mvn compile *)",
+      "Bash(java --version)",
+      "Read(//c/Program Files/**)",
+      "Bash(export M2_HOME=\"/c/Program Files/JetBrains/IntelliJ IDEA 2025.3.3/plugins/maven/lib/maven3\")",
+      "Bash(export PATH=\"$M2_HOME/bin:$PATH\")",
+      "Bash(npm run *)",
+      "Bash(docker exec *)",
+      "WebSearch",
+      "Bash(docker-compose down *)",
+      "Bash(docker-compose up *)",
+      "Bash(./mvnw compile *)",
+      "Bash(xargs wc -l)",
+      "Bash(curl -s \"http://localhost:9091/api/v1/collection/knowledge_base\")",
+      "Bash(curl *)",
+      "WebFetch(domain:www.baeldung.com)",
+      "Bash(./mvnw spring-boot:run)",
+      "Bash(ls -la .env*)",
+      "Bash(ls -la *.env)",
+      "Bash(cat .gitignore)"
+    ]
+  }
+}
