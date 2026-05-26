@@ -63,6 +63,8 @@ jwt:
   expiration: 604800000
 
 app:
+  memory:
+    max-per-user: 500
   crisis:
     cooldown-minutes: 30
   ai-persona: |

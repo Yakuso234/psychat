@@ -12,6 +12,7 @@ import io.milvus.param.dml.SearchParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -33,9 +34,11 @@ public class MemoryService {
     private static final double DECAY_MID = 0.5;
     private static final double DECAY_LOW = 0.1;
     private static final double DAY_SECONDS = 24.0 * 3600.0;
+    private static final long EXPIRE_SECONDS = 90L * 24 * 3600;
 
-    // Per-user memory cap
-    private static final int MAX_MEMORIES_PER_USER = 200;
+    // Per-user memory cap (configurable, default 500)
+    @Value("${app.memory.max-per-user:500}")
+    private int maxMemoriesPerUser;
 
     public MemoryService(MilvusServiceClient milvusClient,
                          @Value("${milvus.collection-name}") String collectionName) {
@@ -46,7 +49,7 @@ public class MemoryService {
     public void store(Long userId, String content, List<Float> embedding) {
         ensureLoaded();
 
-        evictOldestIfNeeded(userId);
+        evictIfNeeded(userId);
 
         String linkedIds = findLinkedMemories(userId, embedding);
 
@@ -105,7 +108,7 @@ public class MemoryService {
     public void storeWithTimestamp(Long userId, String content, List<Float> embedding, long createdAtSeconds) {
         ensureLoaded();
 
-        evictOldestIfNeeded(userId);
+        evictIfNeeded(userId);
 
         String linkedIds = findLinkedMemories(userId, embedding);
 
@@ -123,18 +126,20 @@ public class MemoryService {
         }
     }
 
-    private void evictOldestIfNeeded(Long userId) {
+    private void evictIfNeeded(Long userId) {
+        long now = System.currentTimeMillis() / 1000;
+        long expireThreshold = now - EXPIRE_SECONDS;
+
         var r = milvusClient.query(
                 io.milvus.param.dml.QueryParam.newBuilder()
                         .withCollectionName(collectionName)
                         .withExpr("user_id == " + userId)
                         .withOutFields(List.of("id", "created_at"))
-                        .withLimit((long) (MAX_MEMORIES_PER_USER + 1))
+                        .withLimit((long) (maxMemoriesPerUser + 1))
                         .build());
 
         if (r.getStatus() != 0 || r.getData() == null) return;
 
-        // parse id + created_at
         List<Long> ids = new ArrayList<>();
         List<Long> times = new ArrayList<>();
         for (var fd : r.getData().getFieldsDataList()) {
@@ -145,29 +150,52 @@ public class MemoryService {
             }
         }
 
-        if (ids.size() < MAX_MEMORIES_PER_USER) return;
+        if (ids.size() <= maxMemoriesPerUser) return;
 
-        // sort by created_at ASC, evict oldest first
-        record IdWithTime(long id, long time) {}
-        List<IdWithTime> entries = new ArrayList<>();
+        // sort: expired first (priority evict), then oldest first (LRU)
+        record MemEntry(long id, long time, boolean expired) {}
+        List<MemEntry> entries = new ArrayList<>();
         for (int i = 0; i < ids.size(); i++) {
-            entries.add(new IdWithTime(ids.get(i), i < times.size() ? times.get(i) : 0));
+            long t = i < times.size() ? times.get(i) : 0;
+            entries.add(new MemEntry(ids.get(i), t, t < expireThreshold));
         }
-        entries.sort(Comparator.comparingLong(IdWithTime::time));
+        entries.sort((a, b) -> {
+            if (a.expired != b.expired) return a.expired ? -1 : 1;
+            return Long.compare(a.time, b.time);
+        });
 
-        int toRemove = entries.size() - MAX_MEMORIES_PER_USER + 1; // +1 for the new entry
+        int toRemove = ids.size() - maxMemoriesPerUser;
         String deleteIds = entries.stream()
                 .limit(toRemove)
-                .map(e -> String.valueOf(e.id()))
+                .map(e -> String.valueOf(e.id))
                 .reduce((a, b) -> a + ", " + b)
                 .orElse("");
 
-        milvusClient.delete(DeleteParam.newBuilder()
+        milvusClient.delete(io.milvus.param.dml.DeleteParam.newBuilder()
                 .withCollectionName(collectionName)
                 .withExpr("id in [" + deleteIds + "]")
                 .build());
 
-        log.info("Evicted {} oldest memories for user {} (limit={})", toRemove, userId, MAX_MEMORIES_PER_USER);
+        long expiredCount = entries.stream().limit(toRemove).filter(e -> e.expired).count();
+        log.info("Evicted {} memories for user {} ({} expired>90d, {} LRU, limit={})",
+                toRemove, userId, expiredCount, toRemove - expiredCount, maxMemoriesPerUser);
+    }
+
+    @Scheduled(cron = "0 0 3 * * ?")
+    public void cleanExpiredMemories() {
+        ensureLoaded();
+        long expireThreshold = System.currentTimeMillis() / 1000 - EXPIRE_SECONDS;
+        try {
+            var r = milvusClient.delete(io.milvus.param.dml.DeleteParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .withExpr("created_at < " + expireThreshold)
+                    .build());
+            if (r.getStatus() == 0) {
+                log.info("Scheduled cleanup: deleted expired memories (created_at < {})", expireThreshold);
+            }
+        } catch (Exception e) {
+            log.warn("Scheduled cleanup failed: {}", e.getMessage());
+        }
     }
 
     public List<String> recall(Long userId, List<Float> queryEmbedding, int topK) {
